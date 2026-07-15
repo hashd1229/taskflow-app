@@ -55,8 +55,11 @@ taskflow/
 ├── .github/
 │   └── workflows/
 │       └── ci-cd.yml
-├── .gitignore                    
-├── README.md                                      
+├──  supabase
+|    |__migrations
+|          |--20260714_schema.sql                
+├──  .gitignore  
+|__   README.md                          
 ```
 
 ## What The App Does
