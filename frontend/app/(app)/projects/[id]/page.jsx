@@ -290,8 +290,41 @@ function TaskDialog({ task, projectId, members, allProfiles, canManage, onClose,
 
   const fetchComments = async () => {
     if (!task) return;
-    const { data } = await supabase.from('task_comments').select('*, profile:profiles!task_comments_user_id_fkey(full_name)').eq('task_id', task.id).order('created_at', { ascending: true });
-    setComments(data || []);
+    // const { data } = await supabase.from('task_comments').select('*, profile:profiles!task_comments_user_id_fkey(full_name)').eq('task_id', task.id).order('created_at', { ascending: true });
+    // setComments(data || []);
+    const { data: commentsData, error: commentsError } = await supabase
+    .from('task_comments')
+    .select('*')
+    .eq('task_id', task.id)
+    .order('created_at', { ascending: true });
+
+  if (commentsError) {
+    console.error('Error fetching comments:', commentsError);
+    setComments([]);
+    return;
+  }
+
+  // 2. Get profiles for those comments
+  if (commentsData && commentsData.length > 0) {
+    const userIds = [...new Set(commentsData.map(c => c.user_id).filter(Boolean))];
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .in('id', userIds);
+
+    const profileMap = Object.fromEntries((profiles || []).map(p => [p.id, p]));
+
+    // Combine
+    const enriched = commentsData.map(c => ({
+      ...c,
+      profile: profileMap[c.user_id] || null,
+    }));
+
+    setComments(enriched);
+  } else {
+    setComments([]);
+  }
+
   };
 
   const handleSave = async () => {
@@ -369,88 +402,173 @@ function TaskDialog({ task, projectId, members, allProfiles, canManage, onClose,
   };
 
   const handleAddComment = async () => {
-    if (!newComment.trim() || !task) return;
-    setCommentLoading(true);
-    try {
-      const { data, error } = await supabase.from('task_comments').insert({ task_id: task.id, content: newComment }).select('*, profile:profiles!task_comments_user_id_fkey(full_name)').single();
-      if (error) throw error;
-      setComments([...comments, data]);
-      setNewComment('');
-    } catch (err) {
-      toast.error(err.message || 'Failed to add comment');
-    } finally {
-      setCommentLoading(false);
-    }
-  };
+  if (!newComment.trim() || !task) return;
+  setCommentLoading(true);
+  try {
+    const { data, error } = await supabase
+      .from('task_comments')
+      .insert({
+        task_id: task.id,
+        content: newComment,
+        user_id: profile.id,
+      })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    const { data: profileData } = await supabase
+      .from('profiles')
+      .select('id, full_name')
+      .eq('id', profile.id)
+      .single();
+
+    const newCommentEnriched = {
+      ...data,
+      profile: profileData || null,
+    };
+
+    setComments(prev => [...prev, newCommentEnriched]);
+    setNewComment('');
+
+    toast.success('Comment added'); 
+  } catch (err) {
+    toast.error(err.message || 'Failed to add comment');
+  } finally {
+    setCommentLoading(false);
+  }
+};
 
   return (
-    <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-      <DialogHeader>
-        <DialogTitle>{task ? 'Task Details' : 'Create New Task'}</DialogTitle>
-        <DialogDescription>{task ? 'Update task details and manage comments.' : 'Fill in the details to create a new task.'}</DialogDescription>
-      </DialogHeader>
-      <div className="space-y-4 py-2">
-        <div className="space-y-2">
-          <Label>Task Title</Label>
-          <Input placeholder="e.g. Design homepage mockup" value={title} onChange={(e) => setTitle(e.target.value)} />
-        </div>
-        <div className="space-y-2">
-          <Label>Description</Label>
-          <Textarea placeholder="Describe the task..." value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Status</Label>
-            <Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
-              {TASK_STATUSES.map((s) => <SelectItem key={s} value={s}>{TASK_STATUS_LABELS[s]}</SelectItem>)}
-            </SelectContent></Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Priority</Label>
-            <Select value={priority} onValueChange={setPriority}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
-              {TASK_PRIORITIES.map((p) => <SelectItem key={p} value={p}>{TASK_PRIORITY_LABELS[p]}</SelectItem>)}
-            </SelectContent></Select>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="space-y-2">
-            <Label>Assign To</Label>
-            <Select value={assignedTo} onValueChange={setAssignedTo}><SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger><SelectContent>
-              <SelectItem value="unassigned">Unassigned</SelectItem>
-              {assigneeOptions.map((m) => <SelectItem key={m.user_id || m.id} value={m.user_id || m.id}>{m.profile?.full_name || m.full_name}</SelectItem>)}
-            </SelectContent></Select>
-          </div>
-          <div className="space-y-2">
-            <Label>Due Date</Label>
-            <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-          </div>
-        </div>
-
-        {task && (
-          <div className="space-y-3 pt-4 border-t border-border/60">
-            <div className="flex items-center gap-2">
-              <MessageSquare className="w-4 h-4 text-muted-foreground" />
-              <h4 className="text-sm font-semibold">Comments ({comments.length})</h4>
-            </div>
-            <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-thin">
-              {comments.map((comment) => (
-                <div key={comment.id} className="flex items-start gap-2 p-2 rounded-lg bg-muted/50">
-                  <Avatar className="w-7 h-7 border border-border"><AvatarFallback className="text-[10px] bg-card">{comment.profile?.full_name?.charAt(0).toUpperCase() || '?'}</AvatarFallback></Avatar>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs font-medium">{comment.profile?.full_name || 'Unknown'}</p>
-                    <p className="text-sm text-muted-foreground">{comment.content}</p>
-                    <p className="text-[10px] text-muted-foreground/70 mt-0.5">{new Date(comment.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{task ? 'Task Details' : 'Create New Task'}</DialogTitle>
+                <DialogDescription>{task ? 'Update task details and manage comments.' : 'Fill in the details to create a new task.'}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="space-y-2">
+                  <Label>Task Title</Label>
+                  <Input placeholder="e.g. Design homepage mockup" value={title} onChange={(e) => setTitle(e.target.value)} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <Textarea placeholder="Describe the task..." value={description} onChange={(e) => setDescription(e.target.value)} rows={3} />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select value={status} onValueChange={setStatus}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
+                      {TASK_STATUSES.map((s) => <SelectItem key={s} value={s}>{TASK_STATUS_LABELS[s]}</SelectItem>)}
+                    </SelectContent></Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Priority</Label>
+                    <Select value={priority} onValueChange={setPriority}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>
+                      {TASK_PRIORITIES.map((p) => <SelectItem key={p} value={p}>{TASK_PRIORITY_LABELS[p]}</SelectItem>)}
+                    </SelectContent></Select>
                   </div>
                 </div>
-              ))}
-              {comments.length === 0 && <p className="text-sm text-muted-foreground text-center py-4">No comments yet</p>}
-            </div>
-            <div className="flex gap-2">
-              <Input placeholder="Add a comment..." value={newComment} onChange={(e) => setNewComment(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAddComment(); } }} />
-              <Button size="sm" onClick={handleAddComment} disabled={commentLoading || !newComment.trim()}>Send</Button>
-            </div>
-          </div>
-        )}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Assign To</Label>
+                    <Select value={assignedTo} onValueChange={setAssignedTo}><SelectTrigger><SelectValue placeholder="Unassigned" /></SelectTrigger><SelectContent>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
+                      {assigneeOptions.map((m) => <SelectItem key={m.user_id || m.id} value={m.user_id || m.id}>{m.profile?.full_name || m.full_name}</SelectItem>)}
+                    </SelectContent></Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Due Date</Label>
+                    <Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
+                  </div>
+                </div>
+  
+                            {task && (
+                <div className="space-y-3 pt-4 border-t border-border/60">
+                  <div className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-muted-foreground" />
+                    <h4 className="text-sm font-semibold">Comments ({comments.length})</h4>
+                  </div>
+
+                {/* Display comments */}
+                <div className="space-y-2 max-h-48 overflow-y-auto scrollbar-thin">
+                  {comments.map((comment) => {
+                      const canDeleteComment =
+                        profile?.id === comment.user_id ||
+                        canManage;   
+
+                      return (
+                        <div key={comment.id} className="flex items-start gap-2 p-2 rounded-lg bg-muted/50 group relative">
+                          <Avatar className="w-7 h-7 border border-border">
+                            <AvatarFallback className="text-[10px] bg-card">
+                              {comment.profile?.full_name?.charAt(0).toUpperCase() || '?'}
+                            </AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs font-medium">{comment.profile?.full_name || 'Unknown'}</p>
+                            <p className="text-sm text-muted-foreground">{comment.content}</p>
+                            <p className="text-[10px] text-muted-foreground/70 mt-0.5">
+                              {new Date(comment.created_at).toLocaleString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })}
+                            </p>
+                          </div>
+
+                          {canDeleteComment && (
+                            <button
+                              onClick={async () => {
+                                try {
+                                  const { error } = await supabase
+                                    .from('task_comments')
+                                    .delete()
+                                    .eq('id', comment.id);
+                                  if (error) throw error;
+                                  setComments((prev) => prev.filter((c) => c.id !== comment.id));
+                                  toast.success('Comment deleted');
+                                } catch (err) {
+                                  toast.error('Failed to delete comment');
+                                }
+                              }}
+                              className="opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-destructive/10 rounded absolute top-1 right-1"
+                            >
+                              <X className="w-3 h-3 text-muted-foreground hover:text-destructive" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                    
+
+                  {comments.length === 0 && (
+                    <p className="text-sm text-muted-foreground text-center py-4">No comments yet</p>
+                  )}
+                </div>
+
+                {/* New comment input */}
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Add a comment..."
+                    value={newComment}
+                    onChange={(e) => setNewComment(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        handleAddComment();
+                      }
+                    }}
+                  />
+                  <Button
+                    size="sm"
+                    onClick={handleAddComment}
+                    disabled={commentLoading || !newComment.trim()}
+                  >
+                    Send
+                  </Button>
+                </div>
+              </div>
+            )}
       </div>
       <DialogFooter className="flex items-center justify-between">
         <div>{task && canManage && (<Button variant="destructive" size="sm" onClick={handleDelete}><Trash2 className="w-4 h-4 mr-2" />Delete</Button>)}</div>
