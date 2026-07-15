@@ -6,7 +6,7 @@ A complete project and team task management platform with a modern Next.js front
 
 ```
 taskflow/
-├── frontend/                     # Next.js frontend
+├── frontend/                     # Next.js Frontend
 │   ├── app/
 │   │   ├── (app)/
 │   │   │   ├── dashboard/
@@ -34,7 +34,7 @@ taskflow/
 │   ├── .env.example
 │   └── package.json
 │
-├── backend/                      # Node.js/Express backend
+├── backend/                      # Node.js/Express Backend
 │   ├── src/
 │   │   ├── config.js
 │   │   ├── server.js
