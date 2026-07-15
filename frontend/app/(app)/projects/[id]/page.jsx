@@ -290,8 +290,6 @@ function TaskDialog({ task, projectId, members, allProfiles, canManage, onClose,
 
   const fetchComments = async () => {
     if (!task) return;
-    // const { data } = await supabase.from('task_comments').select('*, profile:profiles!task_comments_user_id_fkey(full_name)').eq('task_id', task.id).order('created_at', { ascending: true });
-    // setComments(data || []);
     const { data: commentsData, error: commentsError } = await supabase
     .from('task_comments')
     .select('*')
@@ -304,7 +302,6 @@ function TaskDialog({ task, projectId, members, allProfiles, canManage, onClose,
     return;
   }
 
-  // 2. Get profiles for those comments
   if (commentsData && commentsData.length > 0) {
     const userIds = [...new Set(commentsData.map(c => c.user_id).filter(Boolean))];
     const { data: profiles } = await supabase
