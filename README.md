@@ -34,7 +34,7 @@ taskflow/
 │   ├── .env.example
 │   └── package.json
 │
-├── backend/                      # Node.js/Express REST API
+├── backend/                      # Node.js/Express backend
 │   ├── src/
 │   │   ├── config.js
 │   │   ├── server.js
