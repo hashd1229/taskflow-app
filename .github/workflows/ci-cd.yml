@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  frontend:
+    frontend:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -41,7 +41,7 @@ jobs:
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
           npm install -g vercel@latest
-          vercel deploy --prod --token $VERCEL_TOKEN --scope $VERCEL_ORG_ID
+          vercel deploy --prod --token $VERCEL_TOKEN --scope $VERCEL_ORG_ID --cwd .
 
   backend:
     runs-on: ubuntu-latest
